@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Get package name from arguments
+PACKAGE_NAME="$1"
+# Check if the package name is provided
+if [ -z "$PACKAGE_NAME" ]; then
+  echo "Please provide the package name"
+  exit 1
+fi
+
+# Get the specified test script from arguments
+TEST_SCRIPT="$2"
+# Check if the test script is provided
+if [ -z "$TEST_SCRIPT" ]; then
+  echo "Please provide the test script"
+  exit 1
+fi
+
+# Check if jq is installed
+if ! [ -x "$(command -v jq)" ]; then
+  echo "Error: jq is not installed." >&2
+  exit 1
+fi
+
+# Fetch versions and store them in an array
+VERSIONS=($(npm view "$PACKAGE_NAME" versions --json | jq -r '.[]'))
+
+# Log how many versions we are going to test
+echo "Testing $PACKAGE_NAME with ${#VERSIONS[@]} versions"
+
+# Prepare result logging as a list of version -> status
+declare -a VERSION_RESULTS
+
+# Loop through each version of the package
+for VERSION in "${VERSIONS[@]}"
+do
+  echo "Testing $PACKAGE_NAME version: $VERSION"
+  
+  # Install the specific version of the package
+  yarn add $PACKAGE_NAME@$VERSION --silent
+
+  # Check if the install succeeded
+  if [ $? -ne 0 ]; then
+    echo "Failed to install $PACKAGE_NAME@$VERSION"
+    continue
+  fi
+
+  # Run the test with node
+  node -e "$TEST_SCRIPT"
+  TEST_RESULT=$?
+  
+  if [ $TEST_RESULT -eq 0 ]; then
+    echo "$PACKAGE_NAME@$VERSION is good"
+    VERSION_RESULTS+=("$VERSION: good")
+  else
+    echo "$PACKAGE_NAME@$VERSION is bad"
+    VERSION_RESULTS+=("$VERSION: bad ($TEST_RESULT)")
+  fi
+  echo ""
+
+done
+
+# Summary logging
+echo "-----------------------------------"
+echo "Test Summary for $PACKAGE_NAME"
+echo "-----------------------------------"
+for RESULT in "${VERSION_RESULTS[@]}"; do
+  echo "$RESULT"
+done
+echo "-----------------------------------"
