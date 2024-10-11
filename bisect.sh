@@ -29,7 +29,12 @@ VERSIONS=($(npm view "$PACKAGE_NAME" versions --json | jq -r '.[]'))
 echo "Testing $PACKAGE_NAME with ${#VERSIONS[@]} versions"
 
 # Temporary file to capture stderr output
-TEMP_FILE=$(mktemp)
+ERR_LOG_FILE=$(mktemp)
+
+# Get the current terminal width
+COLUMNS=$(tput cols)
+# Calculate the maximum width for error log
+MAX_ERROR_LOG_WIDTH=$((COLUMNS - 20))
 
 # Prepare result logging as a list of version -> status
 declare -a VERSION_RESULTS
@@ -49,7 +54,7 @@ do
   fi
 
   # Run the test with node
-  node "$TEST_FILE" 2> $TEMP_FILE
+  TEST_BISECT_VERSION=${VERSION} node "$TEST_FILE" 2> $ERR_LOG_FILE
   TEST_RESULT=$?
   
   if [ $TEST_RESULT -eq 0 ]; then
@@ -57,8 +62,9 @@ do
     VERSION_RESULTS+=("$VERSION: good")
   else
     echo "$PACKAGE_NAME@$VERSION is bad"
+    cat $ERR_LOG_FILE
     # Capture the first 60 characters of stderr, escape newlines
-    ERROR_MESSAGE=$(head -c 120 "$TEMP_FILE" | tr '\n' '\\n')
+    ERROR_MESSAGE=$(head -c "$MAX_ERROR_LOG_WIDTH" "$ERR_LOG_FILE" | tr '\n' '\\n')
     VERSION_RESULTS+=("$VERSION: bad ($TEST_RESULT): $ERROR_MESSAGE")
   fi
   echo ""
