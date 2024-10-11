@@ -9,10 +9,10 @@ if [ -z "$PACKAGE_NAME" ]; then
 fi
 
 # Get the specified test script from arguments
-TEST_SCRIPT="$2"
+TEST_FILE="$2"
 # Check if the test script is provided
-if [ -z "$TEST_SCRIPT" ]; then
-  echo "Please provide the test script"
+if [ -z "$TEST_FILE" ]; then
+  echo "Please provide the test file"
   exit 1
 fi
 
@@ -27,6 +27,9 @@ VERSIONS=($(npm view "$PACKAGE_NAME" versions --json | jq -r '.[]'))
 
 # Log how many versions we are going to test
 echo "Testing $PACKAGE_NAME with ${#VERSIONS[@]} versions"
+
+# Temporary file to capture stderr output
+TEMP_FILE=$(mktemp)
 
 # Prepare result logging as a list of version -> status
 declare -a VERSION_RESULTS
@@ -46,7 +49,7 @@ do
   fi
 
   # Run the test with node
-  node -e "$TEST_SCRIPT"
+  node "$TEST_FILE" 2> $TEMP_FILE
   TEST_RESULT=$?
   
   if [ $TEST_RESULT -eq 0 ]; then
@@ -54,7 +57,9 @@ do
     VERSION_RESULTS+=("$VERSION: good")
   else
     echo "$PACKAGE_NAME@$VERSION is bad"
-    VERSION_RESULTS+=("$VERSION: bad ($TEST_RESULT)")
+    # Capture the first 60 characters of stderr, escape newlines
+    ERROR_MESSAGE=$(head -c 120 "$TEMP_FILE" | tr '\n' '\\n')
+    VERSION_RESULTS+=("$VERSION: bad ($TEST_RESULT): $ERROR_MESSAGE")
   fi
   echo ""
 
@@ -62,7 +67,7 @@ done
 
 # Summary logging
 echo "-----------------------------------"
-echo "Test Summary for $PACKAGE_NAME"
+echo "Test Summary for $PACKAGE_NAME (Total: ${#VERSIONS[@]})"
 echo "-----------------------------------"
 for RESULT in "${VERSION_RESULTS[@]}"; do
   echo "$RESULT"
